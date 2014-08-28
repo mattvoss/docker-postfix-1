@@ -58,7 +58,8 @@ if [[ -n "$(find /etc/postfix/certs -iname *.crt)" && -n "$(find /etc/postfix/ce
   # /etc/postfix/main.cf
   postconf -e smtpd_tls_cert_file=$(find /etc/postfix/certs -iname *.crt)
   postconf -e smtpd_tls_key_file=$(find /etc/postfix/certs -iname *.key)
-  chmod 400 /etc/postfix/certs/*.*
+  postconf -e smtpd_tls_CAfile=/etc/postfix/certs/certs/cacert.pem
+  chmod 400 $(find /etc/postfix/certs -iname *.crt) $(find /etc/postfix/certs -iname *.key) /etc/postfix/certs/certs/cacert.pem
   # /etc/postfix/master.cf
   postconf -M submission/inet="submission   inet   n   -   n   -   -   smtpd"
   postconf -P "submission/inet/syslog_name=postfix/submission"
@@ -66,6 +67,46 @@ if [[ -n "$(find /etc/postfix/certs -iname *.crt)" && -n "$(find /etc/postfix/ce
   postconf -P "submission/inet/smtpd_sasl_auth_enable=yes"
   postconf -P "submission/inet/milter_macro_daemon_name=ORIGINATING"
   postconf -P "submission/inet/smtpd_recipient_restrictions=permit_sasl_authenticated,reject_unauth_destination"
+fi
+
+############
+# LDAP
+############
+
+if [[ -n "$LDAP_HOST" && -n "$LDAP_BASE" ]]; then
+  cat >> /etc/postfix/ldap-aliases.cf <<EOF
+server_host = $LDAP_HOST
+search_base = $LDAP_BASE
+version = 3
+EOF
+
+  if [[ -n "$LDAP_QUERY_FILTER" ]]; then
+    echo "query_filter = $LDAP_QUERY_FILTER" >> /etc/postfix/ldap-aliases.cf
+  fi
+
+  if [[ -n "$LDAP_RESULT_ATTRIBUTE" ]]; then
+    echo "result_attribute = $LDAP_RESULT_ATTRIBUTE" >> /etc/postfix/ldap-aliases.cf
+  fi
+
+  if [[ -n "$LDAP_SPECIAL_RESULT_ATTRIBUTE" ]]; then
+    echo "special_result_attribute = $LDAP_SPECIAL_RESULT_ATTRIBUTE" >> /etc/postfix/ldap-aliases.cf
+  fi
+
+  if [[ -n "$LDAP_TERMINAL_RESULT_ATTRIBUTE" ]]; then
+    echo "terminal_result_attribute = $LDAP_TERMINAL_RESULT_ATTRIBUTE" >> /etc/postfix/ldap-aliases.cf
+  fi
+
+  if [[ -n "$LDAP_LEAF_RESULT_ATTRIBUTE" ]]; then
+    echo "leaf_result_attribute = $LDAP_LEAF_RESULT_ATTRIBUTE" >> /etc/postfix/ldap-aliases.cf
+  fi
+
+  if [[ -n "$LDAP_BIND_DN" && -n "$LDAP_BIND_PW" ]]; then
+    echo "bind = yes" >> /etc/postfix/ldap-aliases.cf
+    echo "bind_dn = $LDAP_BIND_DN" >> /etc/postfix/ldap-aliases.cf
+    echo "bind_pw = $LDAP_BIND_PW" >> /etc/postfix/ldap-aliases.cf
+  fi
+
+  postconf -e alias_maps=ldap:/etc/postfix/ldap-aliases.cf
 fi
 
 #############
