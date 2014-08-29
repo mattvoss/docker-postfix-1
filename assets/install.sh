@@ -159,6 +159,10 @@ EOF
     echo "result_attribute = $LDAP_MAILBOX_RESULT_ATTRIBUTE" >> /etc/postfix/ldap-mailboxes.cf
   fi
 
+  if [[ -n "$LDAP_MAILBOX_RESULT_FORMAT" ]]; then
+    echo "result_format = $LDAP_MAILBOX_RESULT_FORMAT" >> /etc/postfix/ldap-mailboxes.cf
+  fi
+
   postconf -e "virtual_mailbox_domains = \$myhostname, \$mydomain"
   postconf -e virtual_mailbox_base=/var/mail
   postconf -e virtual_alias_maps=ldap:/etc/postfix/ldap-aliases.cf
