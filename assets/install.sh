@@ -39,17 +39,38 @@ postconf -e smtpd_sasl_auth_enable=yes
 postconf -e broken_sasl_auth_clients=yes
 postconf -e smtpd_recipient_restrictions=permit_sasl_authenticated,reject_unauth_destination
 # smtpd.conf
-cat >> /etc/postfix/sasl/smtpd.conf <<EOF
+if [[ -n "$smtp_user" ]]; then
+  cat >> /etc/postfix/sasl/smtpd.conf <<EOF
 pwcheck_method: auxprop
 auxprop_plugin: sasldb
 mech_list: PLAIN LOGIN CRAM-MD5 DIGEST-MD5 NTLM
 EOF
-# sasldb2
-echo $smtp_user | tr , \\n > /tmp/passwd
-while IFS=':' read -r _user _pwd; do
-  echo $_pwd | saslpasswd2 -p -c -u $maildomain $_user
-done < /tmp/passwd
-chown postfix.sasl /etc/sasldb2
+
+  # sasldb2
+  echo $smtp_user | tr , \\n > /tmp/passwd
+  while IFS=':' read -r _user _pwd; do
+    echo $_pwd | saslpasswd2 -p -c -u $maildomain $_user
+  done < /tmp/passwd
+  chown postfix.sasl /etc/sasldb2
+
+elif [[ -n "$LDAP_HOST" && -n "$LDAP_BASE" ]]; then
+
+  cat >> /etc/postfix/sasl/smtpd.conf <<EOF
+ldap_servers: ldap://$LDAP_HOST
+ldap_search_base: $LDAP_BASE
+ldap_version: 3
+EOF
+
+  if [[ -n "$LDAP_USER_FILTER" ]]; then
+    echo "ldap_filter: $LDAP_USER_FILTER" >> /etc/postfix/sasl/smtpd.conf
+  fi
+
+  if [[ -n "$LDAP_BIND_DN" && -n "$LDAP_BIND_PW" ]]; then
+    echo "ldap_bind_dn: $LDAP_BIND_DN" >> /etc/postfix/sasl/smtpd.conf
+    echo "ldap_bind_pw: $LDAP_BIND_PW" >> /etc/postfix/sasl/smtpd.conf
+  fi
+
+fi
 
 ############
 # Enable TLS
@@ -80,8 +101,8 @@ search_base = $LDAP_BASE
 version = 3
 EOF
 
-  if [[ -n "$LDAP_QUERY_FILTER" ]]; then
-    echo "query_filter = $LDAP_QUERY_FILTER" >> /etc/postfix/ldap-aliases.cf
+  if [[ -n "$LDAP_MAIL_FILTER" ]]; then
+    echo "query_filter = $LDAP_MAIL_FILTER" >> /etc/postfix/ldap-aliases.cf
   fi
 
   if [[ -n "$LDAP_RESULT_ATTRIBUTE" ]]; then

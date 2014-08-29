@@ -9,7 +9,7 @@ RUN apt-get update
 
 # Start editing
 # Install package here for cache
-RUN apt-get -y install supervisor postfix postfix-ldap sasl2-bin opendkim opendkim-tools
+RUN apt-get -y install supervisor postfix postfix-ldap sasl2-bin libsasl2-modules-ldap opendkim opendkim-tools
 
 # Add files
 ADD assets/install.sh /opt/install.sh
