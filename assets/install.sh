@@ -26,7 +26,12 @@ service postfix start
 tail -f /var/log/mail.log
 EOF
 chmod +x /opt/postfix.sh
-postconf -e myhostname=$maildomain
+if [[ -n "$MAIL_HOSTNAME" ]]; then
+  postconf -e myhostname=$MAIL_HOSTNAME
+fi
+if [[ -n "$MAIL_DOMAIN" ]]; then
+  postconf -e mydomain=$MAIL_DOMAIN
+fi
 postconf -F '*/*/chroot = n'
 
 ############
@@ -49,7 +54,7 @@ EOF
   # sasldb2
   echo $smtp_user | tr , \\n > /tmp/passwd
   while IFS=':' read -r _user _pwd; do
-    echo $_pwd | saslpasswd2 -p -c -u $maildomain $_user
+    echo $_pwd | saslpasswd2 -p -c -u $MAIL_HOSTNAME $_user
   done < /tmp/passwd
   chown postfix.sasl /etc/sasldb2
 
@@ -183,10 +188,10 @@ localhost
 *.$maildomain
 EOF
 cat >> /etc/opendkim/KeyTable <<EOF
-mail._domainkey.$maildomain $maildomain:mail:$(find /etc/opendkim/domainkeys -iname *.private)
+mail._domainkey.$MAIL_HOSTNAME $MAIL_HOSTNAME:mail:$(find /etc/opendkim/domainkeys -iname *.private)
 EOF
 cat >> /etc/opendkim/SigningTable <<EOF
-*@$maildomain mail._domainkey.$maildomain
+*@$MAIL_HOSTNAME mail._domainkey.$MAIL_HOSTNAME
 EOF
 chown opendkim:opendkim $(find /etc/opendkim/domainkeys -iname *.private)
 chmod 400 $(find /etc/opendkim/domainkeys -iname *.private)
