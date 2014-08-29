@@ -32,7 +32,6 @@ fi
 if [[ -n "$MAIL_DOMAIN" ]]; then
   postconf -e mydomain=$MAIL_DOMAIN
 fi
-postconf -e "mydestination = \$myhostname, localhost.\$mydomain, localhost, \$mydomain"
 postconf -F '*/*/chroot = n'
 
 # No Open Proxy / No Spam
@@ -50,8 +49,11 @@ postconf -e "smtpd_recipient_restrictions=permit_mynetworks,permit_inet_interfac
 # /etc/postfix/main.cf
 postconf -e smtpd_sasl_auth_enable=yes
 postconf -e broken_sasl_auth_clients=yes
+
 # smtpd.conf
 if [[ -n "$smtp_user" ]]; then
+
+  postconf -e "mydestination = \$myhostname, localhost.\$mydomain, localhost, \$mydomain"
   cat >> /etc/postfix/sasl/smtpd.conf <<EOF
 pwcheck_method: auxprop
 auxprop_plugin: sasldb
@@ -67,6 +69,7 @@ EOF
 
 elif [[ -n "$LDAP_HOST" && -n "$LDAP_BASE" ]]; then
 
+  postconf -e "mydestination = localhost.\$mydomain, localhost"
   cat >> /etc/postfix/sasl/smtpd.conf <<EOF
 ldap_servers: ldap://$LDAP_HOST
 ldap_search_base: $LDAP_BASE
@@ -106,30 +109,34 @@ fi
 ############
 
 if [[ -n "$LDAP_HOST" && -n "$LDAP_BASE" ]]; then
+  groupadd -g 1200 vmail
+  useradd -u 1200 -g 1200 -s /sbin/nologin vmail
+  chown vmail:vmail /var/mail
+
   cat >> /etc/postfix/ldap-aliases.cf <<EOF
 server_host = $LDAP_HOST
 search_base = $LDAP_BASE
 version = 3
 EOF
 
-  if [[ -n "$LDAP_MAIL_FILTER" ]]; then
-    echo "query_filter = $LDAP_MAIL_FILTER" >> /etc/postfix/ldap-aliases.cf
+  if [[ -n "$LDAP_ALIAS_FILTER" ]]; then
+    echo "query_filter = $LDAP_ALIAS_FILTER" >> /etc/postfix/ldap-aliases.cf
   fi
 
-  if [[ -n "$LDAP_RESULT_ATTRIBUTE" ]]; then
-    echo "result_attribute = $LDAP_RESULT_ATTRIBUTE" >> /etc/postfix/ldap-aliases.cf
+  if [[ -n "$LDAP_ALIAS_RESULT_ATTRIBUTE" ]]; then
+    echo "result_attribute = $LDAP_ALIAS_RESULT_ATTRIBUTE" >> /etc/postfix/ldap-aliases.cf
   fi
 
-  if [[ -n "$LDAP_SPECIAL_RESULT_ATTRIBUTE" ]]; then
-    echo "special_result_attribute = $LDAP_SPECIAL_RESULT_ATTRIBUTE" >> /etc/postfix/ldap-aliases.cf
+  if [[ -n "$LDAP_ALIAS_SPECIAL_RESULT_ATTRIBUTE" ]]; then
+    echo "special_result_attribute = $LDAP_ALIAS_SPECIAL_RESULT_ATTRIBUTE" >> /etc/postfix/ldap-aliases.cf
   fi
 
-  if [[ -n "$LDAP_TERMINAL_RESULT_ATTRIBUTE" ]]; then
-    echo "terminal_result_attribute = $LDAP_TERMINAL_RESULT_ATTRIBUTE" >> /etc/postfix/ldap-aliases.cf
+  if [[ -n "$LDAP_ALIAS_TERMINAL_RESULT_ATTRIBUTE" ]]; then
+    echo "terminal_result_attribute = $LDAP_ALIAS_TERMINAL_RESULT_ATTRIBUTE" >> /etc/postfix/ldap-aliases.cf
   fi
 
-  if [[ -n "$LDAP_LEAF_RESULT_ATTRIBUTE" ]]; then
-    echo "leaf_result_attribute = $LDAP_LEAF_RESULT_ATTRIBUTE" >> /etc/postfix/ldap-aliases.cf
+  if [[ -n "$LDAP_ALIAS_LEAF_RESULT_ATTRIBUTE" ]]; then
+    echo "leaf_result_attribute = $LDAP_ALIAS_LEAF_RESULT_ATTRIBUTE" >> /etc/postfix/ldap-aliases.cf
   fi
 
   if [[ -n "$LDAP_BIND_DN" && -n "$LDAP_BIND_PW" ]]; then
@@ -138,7 +145,27 @@ EOF
     echo "bind_pw = $LDAP_BIND_PW" >> /etc/postfix/ldap-aliases.cf
   fi
 
-  postconf -e alias_maps=ldap:/etc/postfix/ldap-aliases.cf
+  cat >> /etc/postfix/ldap-mailboxes.cf <<EOF
+server_host = $LDAP_HOST
+search_base = $LDAP_BASE
+version = 3
+EOF
+
+  if [[ -n "$LDAP_MAILBOX_FILTER" ]]; then
+    echo "query_filter = $LDAP_MAILBOX_FILTER" >> /etc/postfix/ldap-mailboxes.cf
+  fi
+
+  if [[ -n "$LDAP_MAILBOX_RESULT_ATTRIBUTE" ]]; then
+    echo "result_attribute = $LDAP_MAILBOX_RESULT_ATTRIBUTE" >> /etc/postfix/ldap-mailboxes.cf
+  fi
+
+  postconf -e "virtual_mailbox_domains = \$myhostname, \$mydomain"
+  postconf -e virtual_mailbox_base=/var/mail
+  postconf -e virtual_alias_maps=ldap:/etc/postfix/ldap-aliases.cf
+  postconf -e virtual_mailbox_maps=ldap:/etc/postfix/ldap-mailboxes.cf
+  postconf -e virtual_uid_maps=static:1200
+  postconf -e virtual_gid_maps=static:1200
+
 fi
 
 #############
