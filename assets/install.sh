@@ -22,6 +22,7 @@ EOF
 ############
 cat >> /opt/postfix.sh <<EOF
 #!/bin/bash
+service saslauthd start
 service postfix start
 tail -f /var/log/mail.log
 EOF
@@ -70,7 +71,20 @@ EOF
 elif [[ -n "$LDAP_HOST" && -n "$LDAP_BASE" ]]; then
 
   postconf -e "mydestination = localhost.\$mydomain, localhost"
-  cat >> /etc/postfix/sasl/smtpd.conf <<EOF
+
+  cat > /etc/postfix/sasl/smtpd.conf <<EOF
+START=yes
+DESC="SASL Authentication Daemon"
+NAME="saslauthd"
+MECHANISMS="ldap"
+OPTIONS="-c -m /var/run/saslauthd"
+EOF
+
+  cat > /etc/postfix/sasl/smtpd.conf <<EOF
+pwcheck_method: saslauthd
+EOF
+
+  cat > /etc/saslauthd.conf <<EOF
 ldap_servers: ldap://$LDAP_HOST
 ldap_search_base: $LDAP_BASE
 ldap_version: 3
