@@ -70,6 +70,8 @@ EOF
 
 elif [[ -n "$LDAP_HOST" && -n "$LDAP_BASE" ]]; then
 
+  adduser postfix sasl
+
   postconf -e "mydestination = localhost.\$mydomain, localhost"
 
   cat > /etc/default/saslauthd <<EOF
@@ -77,7 +79,7 @@ START=yes
 DESC="SASL Authentication Daemon"
 NAME="saslauthd"
 MECHANISMS="ldap"
-OPTIONS="-c -m /var/run/saslauthd"
+OPTIONS="-c -m /var/run/saslauthd -O /etc/saslauthd.conf"
 EOF
 
   cat > /etc/postfix/sasl/smtpd.conf <<EOF
@@ -91,12 +93,12 @@ ldap_version: 3
 EOF
 
   if [[ -n "$LDAP_USER_FILTER" ]]; then
-    echo "ldap_filter: $LDAP_USER_FILTER" >> /etc/postfix/sasl/smtpd.conf
+    echo "ldap_filter: $LDAP_USER_FILTER" >> /etc/saslauthd.conf
   fi
 
   if [[ -n "$LDAP_BIND_DN" && -n "$LDAP_BIND_PW" ]]; then
-    echo "ldap_bind_dn: $LDAP_BIND_DN" >> /etc/postfix/sasl/smtpd.conf
-    echo "ldap_bind_pw: $LDAP_BIND_PW" >> /etc/postfix/sasl/smtpd.conf
+    echo "ldap_bind_dn: $LDAP_BIND_DN" >> /etc/saslauthd.conf
+    echo "ldap_bind_pw: $LDAP_BIND_PW" >> /etc/saslauthd.conf
   fi
 
 fi
