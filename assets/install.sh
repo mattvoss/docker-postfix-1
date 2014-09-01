@@ -72,7 +72,7 @@ elif [[ -n "$LDAP_HOST" && -n "$LDAP_BASE" ]]; then
 
   postconf -e "mydestination = localhost.\$mydomain, localhost"
 
-  cat > /etc/postfix/sasl/smtpd.conf <<EOF
+  cat > /etc/default/saslauthd <<EOF
 START=yes
 DESC="SASL Authentication Daemon"
 NAME="saslauthd"
