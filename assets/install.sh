@@ -179,6 +179,12 @@ EOF
     echo "result_format = $LDAP_MAILBOX_RESULT_FORMAT" >> /etc/postfix/ldap-mailboxes.cf
   fi
 
+  if [[ -n "$LDAP_BIND_DN" && -n "$LDAP_BIND_PW" ]]; then
+    echo "bind = yes" >> /etc/postfix/ldap-mailboxes.cf
+    echo "bind_dn = $LDAP_BIND_DN" >> /etc/postfix/ldap-mailboxes.cf
+    echo "bind_pw = $LDAP_BIND_PW" >> /etc/postfix/ldap-mailboxes.cf
+  fi
+
   postconf -e "virtual_mailbox_domains = \$myhostname, \$mydomain"
   postconf -e virtual_mailbox_base=/var/mail
   postconf -e virtual_alias_maps=ldap:/etc/postfix/ldap-aliases.cf
