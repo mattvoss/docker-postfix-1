@@ -16,9 +16,6 @@ command=/opt/postfix.sh
 [program:cron]
 command=/usr/sbin/cron -f
 
-[program:clamd]
-command=/usr/sbin/clamd
-
 [program:spamassassin]
 command=/usr/sbin/spamd --create-prefs --max-children 5 --helper-home-dir -d --pidfile=/var/run/spamd.pid
 
@@ -100,6 +97,7 @@ EOF
 sed 's/.*pickup.*/&\n         -o content_filter=\n         -o receive_override_options=no_header_body_checks/' /etc/postfix/master.cf > /etc/postfix/master.cf.1 && mv /etc/postfix/master.cf.1 /etc/postfix/master.cf
 
 freshclam
+service clamav-daemon start
 
 ############
 #  postfix
