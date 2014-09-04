@@ -183,6 +183,11 @@ EOF
     echo "ldap_bind_pw: $LDAP_BIND_PW" >> /etc/saslauthd.conf
   fi
 
+  LMTP_PORT=${LMTP_PORT:-24}
+  if [[ -n "$LMTP_HOST" ]]; then
+    postconf -e virtual_transport=lmtp:$LMTP_HOST:$LMTP_PORT
+  fi
+
 fi
 
 ############
