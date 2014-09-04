@@ -13,9 +13,89 @@ nodaemon=true
 [program:postfix]
 command=/opt/postfix.sh
 
+[program:cron]
+command=/usr/sbin/cron -f
+
+[program:amavisd]
+command=/usr/sbin/amavisd-new foreground
+
+[program:spamassassin]
+command=/usr/sbin/spamd --create-prefs --max-children 5 --helper-home-dir -d --pidfile=/var/run/spamd.pid
+
 [program:rsyslog]
 command=/usr/sbin/rsyslogd -n -c3
 EOF
+
+###########################
+# spam and virus detection
+###########################
+
+if [[ -n "$MAIL_DOMAIN" ]]; then
+  cat > /etc/mailname <<EOF
+$MAIL_DOMAIN
+EOF
+
+cat > /etc/default/spamassassin <<EOF
+ENABLED=1
+OPTIONS="--create-prefs --max-children 5 --helper-home-dir"
+PIDFILE="/var/run/spamd.pid"
+CRON=1
+EOF
+
+cat > /etc/amavis/conf.d/15-content_filter_mode << EOF
+use strict;
+@bypass_virus_checks_maps = (
+   \%bypass_virus_checks, \@bypass_virus_checks_acl, \$bypass_virus_checks_re);
+@bypass_spam_checks_maps = (
+   \%bypass_spam_checks, \@bypass_spam_checks_acl, \$bypass_spam_checks_re);
+
+1;
+EOF
+
+cat > /etc/amavis/conf.d/50-user << EOF
+use strict;
+$myhostname = "$MAIL_HOSTNAME";
+$final_spam_destiny  = D_PASS;  # (defaults to D_REJECT)
+$sa_tag_level_deflt  = -100.0;
+$sa_tag2_level_deflt = 5.0;
+$sa_kill_level_deflt = 5.0;
+
+1;
+EOF
+
+postconf -e "content_filter = smtp-amavis:[127.0.0.1]:10024"
+
+cat >> /etc/postfix/master.cf << EOF
+smtp-amavis     unix    -       -       -       -       2       smtp
+        -o smtp_data_done_timeout=1200
+        -o smtp_send_xforward_command=yes
+        -o disable_dns_lookups=yes
+        -o max_use=20
+
+127.0.0.1:10025 inet    n       -       -       -       -       smtpd
+        -o content_filter=
+        -o local_recipient_maps=
+        -o relay_recipient_maps=
+        -o smtpd_restriction_classes=
+        -o smtpd_delay_reject=no
+        -o smtpd_client_restrictions=permit_mynetworks,reject
+        -o smtpd_helo_restrictions=
+        -o smtpd_sender_restrictions=
+        -o smtpd_recipient_restrictions=permit_mynetworks,reject
+        -o smtpd_data_restrictions=reject_unauth_pipelining
+        -o smtpd_end_of_data_restrictions=
+        -o mynetworks=127.0.0.0/8
+        -o smtpd_error_sleep_time=0
+        -o smtpd_soft_error_limit=1001
+        -o smtpd_hard_error_limit=1000
+        -o smtpd_client_connection_count_limit=0
+        -o smtpd_client_connection_rate_limit=0
+        -o receive_override_options=no_header_body_checks,no_unknown_recipient_checks
+EOF
+
+sed 's/.*pickup.*/&\n         -o content_filter=\n         -o receive_override_options=no_header_body_checks/' /etc/postfix/master.cf > /etc/postfix/master.cf.1 && mv /etc/postfix/master.cf.1 /etc/postfix/master.cf
+
+freshclam
 
 ############
 #  postfix
@@ -40,7 +120,7 @@ postconf -F '*/*/chroot = n'
 postconf -e smtpd_sender_restrictions=permit_sasl_authenticated,permit_mynetworks,reject_unknown_sender_domain,permit
 postconf -e smtpd_helo_restrictions=permit_mynetworks,reject_invalid_hostname,permit
 postconf -e smtpd_relay_restrictions=permit_sasl_authenticated,permit_mynetworks,reject_unauth_destination
-postconf -e "smtpd_recipient_restrictions=permit_mynetworks,permit_inet_interfaces,permit_sasl_authenticated,reject_invalid_hostname,reject_non_fqdn_hostname,reject_non_fqdn_sender,reject_non_fqdn_recipient,reject_rbl_client zen.spamhaus.org,permit"
+postconf -e "smtpd_recipient_restrictions=permit_mynetworks,permit_inet_interfaces,permit_sasl_authenticated,reject_invalid_hostname,reject_non_fqdn_hostname,reject_non_fqdn_sender,reject_non_fqdn_recipient,permit"
 
 ############
 # SASL SUPPORT FOR CLIENTS
