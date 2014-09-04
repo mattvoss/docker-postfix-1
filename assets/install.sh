@@ -34,6 +34,7 @@ if [[ -n "$MAIL_DOMAIN" ]]; then
   cat > /etc/mailname <<EOF
 $MAIL_DOMAIN
 EOF
+fi
 
 cat > /etc/default/spamassassin <<EOF
 ENABLED=1
