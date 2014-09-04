@@ -16,11 +16,14 @@ command=/opt/postfix.sh
 [program:cron]
 command=/usr/sbin/cron -f
 
-[program:amavisd]
-command=/usr/sbin/amavisd-new foreground
+[program:clamd]
+command=/usr/sbin/clamd
 
 [program:spamassassin]
 command=/usr/sbin/spamd --create-prefs --max-children 5 --helper-home-dir -d --pidfile=/var/run/spamd.pid
+
+[program:amavisd]
+command=/usr/sbin/amavisd-new foreground
 
 [program:rsyslog]
 command=/usr/sbin/rsyslogd -n -c3
