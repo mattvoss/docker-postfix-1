@@ -55,11 +55,11 @@ EOF
 
 cat > /etc/amavis/conf.d/50-user << EOF
 use strict;
-$myhostname = "$MAIL_HOSTNAME";
-$final_spam_destiny  = D_PASS;  # (defaults to D_REJECT)
-$sa_tag_level_deflt  = -100.0;
-$sa_tag2_level_deflt = 5.0;
-$sa_kill_level_deflt = 5.0;
+\$myhostname = "$MAIL_HOSTNAME";
+\$final_spam_destiny  = D_PASS;  # (defaults to D_REJECT)
+\$sa_tag_level_deflt  = -100.0;
+\$sa_tag2_level_deflt = 5.0;
+\$sa_kill_level_deflt = 5.0;
 
 1;
 EOF
