@@ -2,8 +2,10 @@
 
 #judgement
 if [[ -a /etc/supervisor/conf.d/supervisord.conf ]]; then
-  exit 0
-fi
+
+  /usr/bin/supervisord -c /etc/supervisor/supervisord.conf
+
+else
 
 #supervisor
 cat > /etc/supervisor/conf.d/supervisord.conf <<EOF
@@ -21,6 +23,10 @@ command=/usr/sbin/spamd --create-prefs --max-children 5 --helper-home-dir -d --p
 
 [program:amavisd]
 command=/usr/sbin/amavisd-new foreground
+
+[program:dovecot]
+command=/usr/sbin/dovecot -c /etc/dovecot/dovecot.conf -F
+autorestart=true
 
 [program:rsyslog]
 command=/usr/sbin/rsyslogd -n -c3
@@ -92,11 +98,17 @@ smtp-amavis     unix    -       -       -       -       2       smtp
         -o smtpd_client_connection_count_limit=0
         -o smtpd_client_connection_rate_limit=0
         -o receive_override_options=no_header_body_checks,no_unknown_recipient_checks
+
+submission      inet       n       -       -       -       -       smtpd
+        -o syslog_name=postfix/submission
+        -o smtpd_tls_security_level=encrypt
+        -o smtpd_sasl_auth_enable=yes
+        -o smtpd_client_restrictions=permit_sasl_authenticated,reject
 EOF
 
 sed 's/.*pickup.*/&\n         -o content_filter=\n         -o receive_override_options=no_header_body_checks/' /etc/postfix/master.cf > /etc/postfix/master.cf.1 && mv /etc/postfix/master.cf.1 /etc/postfix/master.cf
 
-freshclam
+freshclam --verbose
 service clamav-daemon start
 
 ############
@@ -197,8 +209,8 @@ if [[ -n "$(find /etc/postfix/certs -iname *.crt)" && -n "$(find /etc/postfix/ce
   # /etc/postfix/main.cf
   postconf -e smtpd_tls_cert_file=$(find /etc/postfix/certs -iname *.crt)
   postconf -e smtpd_tls_key_file=$(find /etc/postfix/certs -iname *.key)
-  postconf -e smtpd_tls_CAfile=/etc/postfix/certs/certs/cacert.pem
-  chmod 400 $(find /etc/postfix/certs -iname *.crt) $(find /etc/postfix/certs -iname *.key) /etc/postfix/certs/certs/cacert.pem
+  postconf -e smtpd_tls_CAfile=/etc/postfix/certs/cacert.pem
+  chmod 400 $(find /etc/postfix/certs -iname *.crt) $(find /etc/postfix/certs -iname *.key) /etc/postfix/certs/cacert.pem
   # /etc/postfix/master.cf
   postconf -M submission/inet="submission   inet   n   -   n   -   -   smtpd"
   postconf -P "submission/inet/syslog_name=postfix/submission"
@@ -282,6 +294,62 @@ EOF
 fi
 
 #############
+# mysql
+#############
+
+if [[ -n "$MYSQL_HOST" && -n "$MYSQL_USER" ]]; then
+
+  groupadd -g 1200 vmail
+  useradd -u 1200 -g 1200 -s /sbin/nologin vmail
+  chown vmail:vmail /var/mail
+
+  cat >> /etc/postfix/mysql-virtual-mailbox-domains.cf <<EOF
+user = $MYSQL_USER
+password = $MYSQL_PASSWORD
+dbname = $MYSQL_DB
+query = SELECT 1 FROM virtual_domains WHERE name='%s'
+hosts = $MYSQL_HOST
+EOF
+
+  cat >> /etc/postfix/mysql-virtual-mailbox-maps.cf  <<EOF
+user = $MYSQL_USER
+password = $MYSQL_PASSWORD
+dbname = $MYSQL_DB
+query = SELECT 1 FROM virtual_users WHERE email='%s'
+
+hosts = $MYSQL_HOST
+EOF
+
+  cat >> /etc/postfix/mysql-virtual-alias-maps.cf  <<EOF
+user = $MYSQL_USER
+password = $MYSQL_PASSWORD
+dbname = $MYSQL_DB
+query = SELECT destination FROM virtual_aliases WHERE source='%s'
+hosts = $MYSQL_HOST
+EOF
+
+  postconf -e 'mydestination = \$myhostname, localhost, localhost.localdomain'
+  postconf -e 'mynetworks = 127.0.0.0/8 172.17.0.0/16'
+  postconf -e 'message_size_limit = 30720000'
+  postconf -e 'virtual_alias_domains ='
+  postconf -e 'virtual_mailbox_domains = mysql:/etc/postfix/mysql-virtual-mailbox-domains.cf'
+  postconf -e 'virtual_mailbox_maps = mysql:/etc/postfix/mysql-virtual-mailbox-maps.cf'
+  postconf -e 'virtual_alias_maps = mysql:/etc/postfix/mysql-virtual-alias-maps.cf'
+  postconf -e 'virtual_mailbox_base = /var/mail'
+  postconf -e 'virtual_uid_maps = static:5000'
+  postconf -e 'virtual_gid_maps = static:5000'
+  postconf -e 'smtpd_sasl_authenticated_header = yes'
+  postconf -e 'smtpd_recipient_restrictions = permit_mynetworks, permit_sasl_authenticated, reject_unauth_destination'
+  postconf -e 'smtpd_use_tls = yes'
+  postconf -e 'virtual_create_maildirsize = yes'
+  postconf -e 'virtual_maildir_extended = yes'
+  postconf -e 'proxy_read_maps = $local_recipient_maps $mydestination $virtual_alias_maps $virtual_alias_domains $virtual_mailbox_maps $virtual_mailbox_domains $relay_recipient_maps $relay_domains $canonical_maps $sender_canonical_maps $recipient_canonical_maps $relocated_maps $transport_maps $mynetworks'
+  postconf -e 'virtual_transport = lmtp:unix:private/dovecot-lmtp'
+  postconf -e 'dovecot_destination_recipient_limit=1'
+
+fi
+
+#############
 #  opendkim
 #############
 
@@ -329,15 +397,74 @@ EOF
 cat >> /etc/opendkim/TrustedHosts <<EOF
 127.0.0.1
 localhost
-192.168.0.1/24
-
+172.17.0.0/16
 *.$maildomain
 EOF
 cat >> /etc/opendkim/KeyTable <<EOF
-mail._domainkey.$MAIL_HOSTNAME $MAIL_HOSTNAME:mail:$(find /etc/opendkim/domainkeys -iname *.private)
+mail._domainkey.$MAIL_DOMAIN $MAIL_DOMAIN:mail:$(find /etc/opendkim/domainkeys -iname *.private)
 EOF
 cat >> /etc/opendkim/SigningTable <<EOF
-*@$MAIL_HOSTNAME mail._domainkey.$MAIL_HOSTNAME
+*@$MAIL_DOMAIN mail._domainkey.$MAIL_DOMAIN
 EOF
 chown opendkim:opendkim $(find /etc/opendkim/domainkeys -iname *.private)
 chmod 400 $(find /etc/opendkim/domainkeys -iname *.private)
+
+#############
+#  dovecot
+#############
+
+  cat >> /etc/postfix/master.cf <<EOF
+dovecot   unix  -       n       n       -       -       pipe
+    flags=DRhu user=vmail:vmail argv=/usr/lib/dovecot/deliver -d \${recipient}
+EOF
+
+  mv /opt/dovecot.conf /etc/dovecot
+  mv /opt/10-mail.conf /etc/dovecot/conf.d
+  mv /opt/10-auth.conf /etc/dovecot/conf.d
+  mv /opt/dovecot-sql.conf.ext /etc/dovecot
+  mv /opt/10-master.conf /etc/dovecot/conf.d
+  mv /opt/10-ssl.conf /etc/dovecot/conf.d
+
+  cat > /etc/dovecot/conf.d/auth-sql.conf.ext <<EOF
+passdb {
+  driver = sql
+  args = /etc/dovecot/dovecot-sql.conf.ext
+}
+userdb {
+  driver = static
+  args = uid=vmail gid=vmail home=/var/mail/%d/%n
+}
+EOF
+
+  cat >> /etc/dovecot/dovecot-sql.conf.ext <<EOF
+connect = host=$MYSQL_HOST dbname=$MYSQL_DB user=$MYSQL_USER password=$MYSQL_PASSWORD
+EOF
+
+  cat >> /etc/dovecot/conf.d/10-ssl.conf <<EOF
+ssl = required
+ssl_cert = </etc/ssl/certs/dovecot.pem
+ssl_key = </etc/ssl/private/dovecot.pem
+EOF
+
+  cat >> /etc/dovecot/conf.d/15-lda.conf<<EOF
+postmaster_address = postmaster@$MAIL_DOMAIN
+EOF
+
+postconf -e 'smtpd_tls_cert_file=/etc/ssl/certs/dovecot.pem'
+postconf -e 'smtpd_tls_key_file=/etc/ssl/private/dovecot.pem'
+postconf -e 'smtpd_use_tls=yes'
+postconf -e 'smtpd_tls_auth_only = yes'
+
+postconf -e 'smtpd_sasl_type = dovecot'
+postconf -e 'smtpd_sasl_path = private/auth'
+postconf -e 'smtpd_sasl_auth_enable = yes'
+postconf -e 'smtpd_recipient_restrictions = permit_sasl_authenticated, permit_mynetworks, reject_unauth_destination'
+
+chown -R vmail:dovecot /etc/dovecot
+chmod -R o-rwx /etc/dovecot
+
+#############
+#  start
+#############
+  /usr/bin/supervisord -c /etc/supervisor/supervisord.conf
+fi
